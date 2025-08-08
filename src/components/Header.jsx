@@ -10,7 +10,6 @@ const Header = ({ onClearChat }) => {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-900">AI Assistant</h1>
-            <p className="text-sm text-gray-500">Powered by Hugging Face</p>
           </div>
         </div>
 

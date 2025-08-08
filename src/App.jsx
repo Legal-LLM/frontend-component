@@ -4,21 +4,35 @@ import ChatInput from "./components/ChatInput";
 import Header from "./components/Header";
 import LoadingDots from "./components/LoadingDots";
 
-// Replace with your actual Hugging Face API key and model endpoint
-const HF_API_KEY = "your-huggingface-api-key-here";
-const MODEL_URL = "https://api-inference.huggingface.co/models/your-model-name";
+// Point this at your FastAPI server
+// If using Vite, you can set VITE_API_BASE_URL in .env
+const BACKEND_URL =
+  import.meta?.env?.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 function App() {
   const [messages, setMessages] = useState([
     {
       id: 1,
-      text: "Hello! I'm your AI assistant. How can I help you today?",
+      text: "Hello! I'm your Sri Lankan Legal LLM assistant. Ask about Companies Act, Inland Revenue Act, or Labor/Labour Laws.",
       isBot: true,
       timestamp: new Date(),
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Keep one session_id per browser (so memory works)
+  const sessionIdRef = useRef(null);
+  if (!sessionIdRef.current) {
+    const existing = localStorage.getItem("legal_llm_session_id");
+    if (existing) {
+      sessionIdRef.current = existing;
+    } else {
+      const sid = `sess_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem("legal_llm_session_id", sid);
+      sessionIdRef.current = sid;
+    }
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -28,82 +42,83 @@ function App() {
     scrollToBottom();
   }, [messages]);
 
-  const callHuggingFaceAPI = async (prompt) => {
-    try {
-      const response = await fetch(MODEL_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${HF_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            max_length: 500,
-            temperature: 0.7,
-            do_sample: true,
-          },
-        }),
-      });
+  // OPTIONAL: Build the FAISS index once per tab session
+  useEffect(() => {
+    const alreadyIngested = sessionStorage.getItem("ingested_once");
+    // Flip to true if you don't want the frontend to call ingest automatically.
+    const AUTO_INGEST = false;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      // Handle different response formats from different models
-      if (Array.isArray(data) && data[0]?.generated_text) {
-        return data[0].generated_text;
-      } else if (data.generated_text) {
-        return data.generated_text;
-      } else {
-        return "I received your message but couldn't generate a proper response. Please try again.";
-      }
-    } catch (error) {
-      console.error("Error calling Hugging Face API:", error);
-      return "Sorry, I'm having trouble connecting to the AI service. Please check your API configuration and try again.";
+    if (!alreadyIngested && AUTO_INGEST) {
+      fetch(`${BACKEND_URL}/ingest`, { method: "POST" })
+        .then(() => sessionStorage.setItem("ingested_once", "true"))
+        .catch((e) =>
+          console.warn("Ingest failed (will still work if index exists):", e)
+        );
     }
+  }, []);
+
+  const callFastAPIChat = async (prompt) => {
+    const payload = {
+      session_id: sessionIdRef.current,
+      message: prompt,
+    };
+
+    const res = await fetch(`${BACKEND_URL}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`FastAPI /chat ${res.status}: ${txt}`);
+    }
+    const data = await res.json();
+
+    // Backend returns: { session_id, is_legal, answer, citations: [], used_k }
+    let text = data.answer || "No response.";
+    if (Array.isArray(data.citations) && data.citations.length > 0) {
+      // Append sources as plain text (no Markdown)
+      const sourcesList = data.citations
+        .map((s, i) => `${i + 1}) ${s}`)
+        .join("\n");
+      text += `\n\nSources:\n${sourcesList}`;
+    }
+    return { text, isLegal: !!data.is_legal };
   };
 
   const handleSendMessage = async (messageText) => {
     if (!messageText.trim()) return;
 
-    // Add user message
     const userMessage = {
       id: Date.now(),
       text: messageText,
       isBot: false,
       timestamp: new Date(),
     };
-
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      // Call Hugging Face API
-      const botResponse = await callHuggingFaceAPI(messageText);
+      const { text } = await callFastAPIChat(messageText);
 
-      // Add bot response
       const botMessage = {
         id: Date.now() + 1,
-        text: botResponse,
+        text,
         isBot: true,
         timestamp: new Date(),
       };
-
       setMessages((prev) => [...prev, botMessage]);
-    } catch (error) {
-      // Add error message
+    } catch (err) {
+      console.error(err);
       const errorMessage = {
         id: Date.now() + 1,
-        text: "Sorry, something went wrong. Please try again.",
+        text: "Sorry, I couldn't reach the Legal LLM service. Check if the FastAPI server is running and CORS is enabled.",
         isBot: true,
         timestamp: new Date(),
         isError: true,
       };
       setMessages((prev) => [...prev, errorMessage]);
-      console.error("Error sending message to Hugging Face API:", error);
     } finally {
       setIsLoading(false);
     }
@@ -113,7 +128,7 @@ function App() {
     setMessages([
       {
         id: 1,
-        text: "Hello! I'm your AI assistant. How can I help you today?",
+        text: "Hello! I'm your Sri Lankan Legal LLM assistant. Ask about Companies Act, Inland Revenue Act, or Labor/Labour Laws.",
         isBot: true,
         timestamp: new Date(),
       },
