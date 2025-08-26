@@ -56,7 +56,6 @@ function CodeBlock({ inline, className, children, ...props }) {
 const Markdown = ({ children }) => (
   <ReactMarkdown
     remarkPlugins={[remarkGfm]}
-    // We do NOT enable raw HTML for safety (no rehype-raw). If you need it, tell me and we'll sanitize.
     components={{
       h1: ({ children }) => (
         <h1 className="text-xl font-semibold mb-2">{children}</h1>

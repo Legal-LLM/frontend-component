@@ -9,7 +9,7 @@ const Header = ({ onClearChat }) => {
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">AI Assistant</h1>
+            <h1 className="text-xl font-bold text-gray-900">Deepcrop AI</h1>
           </div>
         </div>
 
